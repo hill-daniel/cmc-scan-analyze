@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -26,8 +25,8 @@ func Test(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println(changes)
 	if len(changes) == 0 {
 		t.Errorf("expected changes, got nothing")
 	}
+	writeToConsole(changes)
 }

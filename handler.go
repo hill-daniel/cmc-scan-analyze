@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 	"log"
 	"os"
+	"text/tabwriter"
 	"time"
 )
 
@@ -39,6 +42,27 @@ func handler(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to calculate rank changes: %v", err)
 	}
-	fmt.Print(changes)
+	writeToConsole(changes)
 	return nil
+}
+
+func writeToConsole(rankChanges []RankChange) {
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+	_, err := fmt.Fprintln(w, "#\t CMC-Rank\t Name\t Symbol\t Change 24h\t Change 7d\t Change 30d\t Market Cap\t Price")
+	if err != nil {
+		log.Fatalf("failed to format header: %v", err)
+	}
+	p := message.NewPrinter(language.English)
+
+	for i, change := range rankChanges {
+		_, err = fmt.Fprintf(w, "#%d\t %d\t %s\t %s\t %.2f%%\t %.2f%%\t  %.2f%%\t %s\t %s \n", i+1, change.Change, change.RecentQuote.Name, change.RecentQuote.Symbol, change.RecentQuote.PercentChange24H,
+			change.RecentQuote.PercentChange7D, change.RecentQuote.PercentChange30D, p.Sprintf("%.2f", change.RecentQuote.MarketCap), p.Sprintf("%.8f", change.RecentQuote.Price))
+		if err != nil {
+			log.Fatalf("failed to format rankChange: %v", err)
+		}
+	}
+	err = w.Flush()
+	if err != nil {
+		log.Fatalf("failed to flush writer: %v", err)
+	}
 }

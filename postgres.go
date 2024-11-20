@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+type AssetQuote struct {
+	Asset
+	Quote
+}
+
 // Asset represents the assets table.
 type Asset struct {
 	ID        int       `json:"id" db:"id"`

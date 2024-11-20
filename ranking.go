@@ -6,12 +6,11 @@ import (
 	"time"
 )
 
-const rangeQuoteQuery = "SELECT * FROM quotes WHERE timestamp between $1 AND $2 ORDER BY asset_id, timestamp"
+const rangeQuery = `select * from assets a inner join quotes q on a.id = q.asset_id WHERE q.timestamp between $1 AND $2 ORDER BY q.asset_id, q.timestamp`
 
 type RankChange struct {
-	AssetID     int
 	Change      int
-	RecentQuote Quote
+	RecentQuote AssetQuote
 }
 
 type Ranker struct {
@@ -26,39 +25,39 @@ type TimeRange struct {
 
 func (r *Ranker) calcRankChanges(timeRange TimeRange, limit int) ([]RankChange, error) {
 	db := r.db
-	rows, err := db.Query(rangeQuoteQuery, timeRange.From, timeRange.To)
+	rows, err := db.Query(rangeQuery, timeRange.From, timeRange.To)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ranks: %w", err)
 	}
 
-	var quotes []Quote
+	var quotes []AssetQuote
 	pq := newPriorityQueue[RankChange](limit, func(c1, c2 RankChange) int {
 		return c1.Change - c2.Change
 	})
 	var curId int
 
 	for rows.Next() {
-		quote := Quote{}
-		err := rows.Scan(&quote.ID, &quote.AssetID, &quote.Rank, &quote.Price, &quote.MarketCap, &quote.PercentChange1H, &quote.PercentChange24H, &quote.PercentChange7D, &quote.PercentChange30D, &quote.PercentChange60D, &quote.PercentChange90D, &quote.Timestamp)
+		aq := AssetQuote{}
+		err := rows.Scan(&aq.Asset.ID, &aq.TokenID, &aq.Name, &aq.Symbol, &aq.Asset.Timestamp, &aq.Quote.ID, &aq.AssetID, &aq.Rank, &aq.Price, &aq.MarketCap, &aq.PercentChange1H, &aq.PercentChange24H, &aq.PercentChange7D, &aq.PercentChange30D, &aq.PercentChange60D, &aq.PercentChange90D, &aq.Quote.Timestamp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan ranks: %w", err)
 		}
 		if curId == 0 {
-			curId = quote.AssetID
+			curId = aq.AssetID
 		}
-		if curId != quote.AssetID {
-			change := RankChange{AssetID: curId, Change: calcRankChange(quotes), RecentQuote: quotes[len(quotes)-1]}
+		if curId != aq.AssetID {
+			change := RankChange{Change: calcRankChange(quotes), RecentQuote: quotes[len(quotes)-1]}
 			pq.Add(change)
 			quotes = nil
-			curId = quote.AssetID
+			curId = aq.AssetID
 		}
-		quotes = append(quotes, quote)
+		quotes = append(quotes, aq)
 	}
 	return pq.GetAll(), nil
 }
 
-func calcRankChange(quotes []Quote) int {
+func calcRankChange(quotes []AssetQuote) int {
 	if len(quotes) > 1 {
 		return quotes[0].Rank - quotes[len(quotes)-1].Rank
 	}

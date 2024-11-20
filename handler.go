@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 var (
@@ -29,5 +30,15 @@ func handler(ctx context.Context) error {
 		}
 	}(db)
 
+	ranker := Ranker{db: db}
+	timeRange := TimeRange{
+		From: time.Now().Add(-10 * 24 * time.Hour),
+		To:   time.Now(),
+	}
+	changes, err := ranker.calcRankChanges(timeRange, 10)
+	if err != nil {
+		return fmt.Errorf("failed to calculate rank changes: %v", err)
+	}
+	fmt.Print(changes)
 	return nil
 }

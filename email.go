@@ -1,0 +1,223 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ses"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
+	"html/template"
+	"io"
+	"log"
+	"net/mail"
+	"text/tabwriter"
+)
+
+const cryptoTableTemplate = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cryptocurrency Table</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .positive {
+            color: green;
+            font-weight: bold;
+        }
+
+        .negative {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<h1>Cryptocurrency Data</h1>
+<table>
+    <thead>
+    <tr>
+        <th>CMC-Rank</th>
+        <th>Name</th>
+        <th>Symbol</th>
+        <th>Change 24h</th>
+        <th>Change 7d</th>
+        <th>Change 30d</th>
+        <th>Market Cap</th>
+        <th>Price</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{ range . }}
+    <tr>
+        <td>
+            {{ if gt .Change 0 }}
+            <span class="positive">▲{{ .Change }}</span>
+            {{ else if lt .Change 0 }}
+            <span class="negative">▼{{ .Change }}</span>
+            {{ else }}
+            {{ .Change }}
+            {{ end }}
+        </td>
+        <td>{{ .RecentQuote.Name }}</td>
+        <td>{{ .RecentQuote.Symbol }}</td>
+        <td>
+            {{ if gt .RecentQuote.PercentChange24H 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange24H }}</span>
+            {{ else if lt .RecentQuote.PercentChange24H 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange24H }}</span>
+            {{ else }}
+            {{ printf "%.2f%%" .RecentQuote.PercentChange24H }}
+            {{ end }}
+        </td>
+        <td>
+            {{ if gt .RecentQuote.PercentChange7D 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange7D }}</span>
+            {{ else if lt .RecentQuote.PercentChange7D 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange7D }}</span>
+            {{ else }}
+            {{ printf "%.2f%%" .RecentQuote.PercentChange7D }}
+            {{ end }}
+        </td>
+        <td>
+            {{ if gt .RecentQuote.PercentChange30D 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange30D }}</span>
+            {{ else if lt .RecentQuote.PercentChange30D 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange30D }}</span>
+            {{ else }}
+            {{ printf "%.2f%%" .RecentQuote.PercentChange30D }}
+            {{ end }}
+        </td>
+        <td>{{ formatCurrency .RecentQuote.MarketCap }}</td>
+        <td>{{ formatTokenValue .RecentQuote.Price }}</td>
+    </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>
+`
+
+// EmailInput defines the expected input for the Lambda function
+type EmailInput struct {
+	Sender     string   `json:"sender"`
+	Recipients []string `json:"recipients"`
+	Subject    string   `json:"subject"`
+	Body       string   `json:"body"`
+	Html       string   `json:"html"`
+}
+
+func createHtml(changes []RankChange) (string, error) {
+	p := message.NewPrinter(language.English)
+
+	funcMap := template.FuncMap{
+		"formatCurrency": func(value float64) string {
+			return p.Sprintf("$%.2f", value)
+		},
+		"formatTokenValue": func(value float64) string {
+			return p.Sprintf("$%.8f", value)
+		},
+	}
+	tmpl, err := template.New("cryptoTable").Funcs(funcMap).Parse(cryptoTableTemplate)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, changes)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+	// Output the generated HTML
+	return buf.String(), nil
+}
+
+func writeChanges(output io.Writer, rankChanges []RankChange) {
+	w := tabwriter.NewWriter(output, 1, 1, 1, ' ', 0)
+	_, err := fmt.Fprintln(w, "#\t CMC-Rank\t Name\t Symbol\t Change 24h\t Change 7d\t Change 30d\t Market Cap\t Price")
+	if err != nil {
+		log.Fatalf("failed to format header: %v", err)
+	}
+	p := message.NewPrinter(language.English)
+
+	for i, change := range rankChanges {
+		_, err = fmt.Fprintf(w, "#%d\t %d\t %s\t %s\t %.2f%%\t %.2f%%\t  %.2f%%\t %s\t %s \n", i+1, change.Change, change.RecentQuote.Name, change.RecentQuote.Symbol, change.RecentQuote.PercentChange24H,
+			change.RecentQuote.PercentChange7D, change.RecentQuote.PercentChange30D, p.Sprintf("%.2f", change.RecentQuote.MarketCap), p.Sprintf("%.8f", change.RecentQuote.Price))
+		if err != nil {
+			log.Fatalf("failed to format rankChange: %v", err)
+		}
+	}
+	err = w.Flush()
+	if err != nil {
+		log.Fatalf("failed to flush writer: %v", err)
+	}
+}
+
+func sendEmail(input EmailInput) error {
+	// Validate email addresses
+	if _, err := mail.ParseAddress(input.Sender); err != nil {
+		return fmt.Errorf("invalid sender email: %v", err)
+	}
+
+	recipients := make([]*string, len(input.Recipients))
+	for i, recipient := range input.Recipients {
+		if _, err := mail.ParseAddress(recipient); err != nil {
+			return fmt.Errorf("invalid recipient email: %v", err)
+		}
+		recipients[i] = &recipient
+	}
+
+	// Start AWS session
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("eu-central-1"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create AWS session: %v", err)
+	}
+
+	// Create SES service client
+	svc := ses.New(sess)
+
+	// Compose the email
+	inputMessage := &ses.SendEmailInput{
+		Destination: &ses.Destination{
+			ToAddresses: recipients,
+		},
+		Message: &ses.Message{
+			Body: &ses.Body{
+				Text: &ses.Content{
+					Data: aws.String(input.Body),
+				},
+				Html: &ses.Content{
+					Data: aws.String(input.Html)},
+			},
+			Subject: &ses.Content{
+				Data: aws.String(input.Subject),
+			},
+		},
+		Source: aws.String(input.Sender),
+	}
+
+	_, err = svc.SendEmail(inputMessage)
+	if err != nil {
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	return nil
+}

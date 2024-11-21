@@ -8,11 +8,6 @@ import (
 
 const rangeQuery = `select * from assets a inner join quotes q on a.id = q.asset_id WHERE q.timestamp between $1 AND $2 ORDER BY q.asset_id, q.timestamp`
 
-type RankChange struct {
-	Change      int
-	RecentQuote AssetQuote
-}
-
 type Ranker struct {
 	db *sql.DB
 }
@@ -23,7 +18,7 @@ type TimeRange struct {
 	To   time.Time
 }
 
-func (r *Ranker) calcRankChanges(timeRange TimeRange, limit int) ([]RankChange, error) {
+func (r *Ranker) calcRankChanges(timeRange TimeRange, limit int) ([]AssetQuote, error) {
 	db := r.db
 	rows, err := db.Query(rangeQuery, timeRange.From, timeRange.To)
 
@@ -32,8 +27,8 @@ func (r *Ranker) calcRankChanges(timeRange TimeRange, limit int) ([]RankChange, 
 	}
 
 	var quotes []AssetQuote
-	pq := newPriorityQueue[RankChange](limit, func(c1, c2 RankChange) int {
-		return c1.Change - c2.Change
+	pq := newPriorityQueue[AssetQuote](limit, func(c1, c2 AssetQuote) int {
+		return c1.RankChange - c2.RankChange
 	})
 	var curId int
 
@@ -47,8 +42,9 @@ func (r *Ranker) calcRankChanges(timeRange TimeRange, limit int) ([]RankChange, 
 			curId = aq.AssetID
 		}
 		if curId != aq.AssetID {
-			change := RankChange{Change: calcRankChange(quotes), RecentQuote: quotes[len(quotes)-1]}
-			pq.Add(change)
+			recentQuote := quotes[len(quotes)-1]
+			recentQuote.RankChange = calcRankChange(quotes)
+			pq.Add(recentQuote)
 			quotes = nil
 			curId = aq.AssetID
 		}

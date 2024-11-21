@@ -67,45 +67,45 @@ const cryptoTableTemplate = `<!DOCTYPE html>
     {{ range . }}
     <tr>
         <td>
-            {{ if gt .Change 0 }}
-            <span class="positive">▲{{ .Change }}</span>
-            {{ else if lt .Change 0 }}
-            <span class="negative">▼{{ .Change }}</span>
+            {{ if gt .RankChange 0 }}
+            <span class="positive">▲{{ .RankChange }}</span>
+            {{ else if lt .RankChange 0 }}
+            <span class="negative">▼{{ .RankChange }}</span>
             {{ else }}
-            {{ .Change }}
+            {{ .RankChange }}
             {{ end }}
         </td>
-        <td>{{ .RecentQuote.Name }}</td>
-        <td>{{ .RecentQuote.Symbol }}</td>
+        <td>{{ .Name }}</td>
+        <td>{{ .Symbol }}</td>
         <td>
-            {{ if gt .RecentQuote.PercentChange24H 0.0 }}
-            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange24H }}</span>
-            {{ else if lt .RecentQuote.PercentChange24H 0.0 }}
-            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange24H }}</span>
+            {{ if gt .PercentChange24H 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .PercentChange24H }}</span>
+            {{ else if lt .PercentChange24H 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .PercentChange24H }}</span>
             {{ else }}
-            {{ printf "%.2f%%" .RecentQuote.PercentChange24H }}
-            {{ end }}
-        </td>
-        <td>
-            {{ if gt .RecentQuote.PercentChange7D 0.0 }}
-            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange7D }}</span>
-            {{ else if lt .RecentQuote.PercentChange7D 0.0 }}
-            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange7D }}</span>
-            {{ else }}
-            {{ printf "%.2f%%" .RecentQuote.PercentChange7D }}
+            {{ printf "%.2f%%" .PercentChange24H }}
             {{ end }}
         </td>
         <td>
-            {{ if gt .RecentQuote.PercentChange30D 0.0 }}
-            <span class="positive">{{ printf "%.2f%%" .RecentQuote.PercentChange30D }}</span>
-            {{ else if lt .RecentQuote.PercentChange30D 0.0 }}
-            <span class="negative">{{ printf "%.2f%%" .RecentQuote.PercentChange30D }}</span>
+            {{ if gt .PercentChange7D 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .PercentChange7D }}</span>
+            {{ else if lt .PercentChange7D 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .PercentChange7D }}</span>
             {{ else }}
-            {{ printf "%.2f%%" .RecentQuote.PercentChange30D }}
+            {{ printf "%.2f%%" .PercentChange7D }}
             {{ end }}
         </td>
-        <td>{{ formatCurrency .RecentQuote.MarketCap }}</td>
-        <td>{{ formatTokenValue .RecentQuote.Price }}</td>
+        <td>
+            {{ if gt .PercentChange30D 0.0 }}
+            <span class="positive">{{ printf "%.2f%%" .PercentChange30D }}</span>
+            {{ else if lt .PercentChange30D 0.0 }}
+            <span class="negative">{{ printf "%.2f%%" .PercentChange30D }}</span>
+            {{ else }}
+            {{ printf "%.2f%%" .PercentChange30D }}
+            {{ end }}
+        </td>
+        <td>{{ formatCurrency .MarketCap }}</td>
+        <td>{{ formatTokenValue .Price }}</td>
     </tr>
     {{ end }}
     </tbody>
@@ -123,7 +123,7 @@ type EmailInput struct {
 	Html       string   `json:"html"`
 }
 
-func createHtml(changes []RankChange) (string, error) {
+func createHtml(changes []AssetQuote) (string, error) {
 	p := message.NewPrinter(language.English)
 
 	funcMap := template.FuncMap{
@@ -148,7 +148,7 @@ func createHtml(changes []RankChange) (string, error) {
 	return buf.String(), nil
 }
 
-func writeChanges(output io.Writer, rankChanges []RankChange) {
+func writeChanges(output io.Writer, quotes []AssetQuote) {
 	w := tabwriter.NewWriter(output, 1, 1, 1, ' ', 0)
 	_, err := fmt.Fprintln(w, "#\t CMC-Rank\t Name\t Symbol\t Change 24h\t Change 7d\t Change 30d\t Market Cap\t Price")
 	if err != nil {
@@ -156,9 +156,9 @@ func writeChanges(output io.Writer, rankChanges []RankChange) {
 	}
 	p := message.NewPrinter(language.English)
 
-	for i, change := range rankChanges {
-		_, err = fmt.Fprintf(w, "#%d\t %d\t %s\t %s\t %.2f%%\t %.2f%%\t  %.2f%%\t %s\t %s \n", i+1, change.Change, change.RecentQuote.Name, change.RecentQuote.Symbol, change.RecentQuote.PercentChange24H,
-			change.RecentQuote.PercentChange7D, change.RecentQuote.PercentChange30D, p.Sprintf("%.2f", change.RecentQuote.MarketCap), p.Sprintf("%.8f", change.RecentQuote.Price))
+	for i, quote := range quotes {
+		_, err = fmt.Fprintf(w, "#%d\t %d\t %s\t %s\t %.2f%%\t %.2f%%\t  %.2f%%\t %s\t %s \n", i+1, quote.RankChange, quote.Name, quote.Symbol, quote.PercentChange24H,
+			quote.PercentChange7D, quote.PercentChange30D, p.Sprintf("%.2f", quote.MarketCap), p.Sprintf("%.8f", quote.Price))
 		if err != nil {
 			log.Fatalf("failed to format rankChange: %v", err)
 		}

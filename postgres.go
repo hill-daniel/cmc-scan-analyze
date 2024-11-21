@@ -5,6 +5,7 @@ import (
 )
 
 type AssetQuote struct {
+	RankChange int
 	Asset
 	Quote
 }

@@ -63,8 +63,8 @@ func Test_send_email(t *testing.T) {
 	}
 
 	err = sendEmail(EmailInput{
-		Sender:     "kiwilisk@gmail.com",
-		Recipients: []string{"daniel@uphill.dev"},
+		Sender:     "daniel@uphill.dev",
+		Recipients: []string{"kiwilisk@gmail.com"},
 		Subject:    "New coinmarketcap rank changes",
 		Body:       content,
 		Html:       htmlContent,
